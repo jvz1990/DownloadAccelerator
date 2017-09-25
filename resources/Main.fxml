@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<?import com.jfoenix.controls.JFXToolbar?>
+<?import de.jensd.fx.glyphs.fontawesome.FontAwesomeIconView?>
+<?import com.jfoenix.controls.JFXRippler?>
+<?import com.jfoenix.controls.JFXDialog?>
+<?import com.jfoenix.controls.JFXDialogLayout?>
+<?import com.jfoenix.controls.JFXTextField?>
+<?import com.jfoenix.controls.JFXTextArea?>
+<?import com.jfoenix.controls.JFXButton?>
+<?import com.jfoenix.controls.JFXSnackbar?>
+<?import com.jfoenix.controls.JFXSlider?>
+<?import com.jfoenix.controls.JFXTreeTableView?>
+<?import com.jfoenix.controls.JFXTreeTableColumn?>
+<AnchorPane xmlns="http://javafx.com/javafx"
+            xmlns:fx="http://javafx.com/fxml"
+            fx:controller="Controller"
+            minHeight="1280.0" minWidth="800.0"
+            fx:id="root">
+    <children>
+        <BorderPane>
+            <top>
+                <JFXToolbar prefWidth="${root.width}">
+                    <leftItems>
+                        <HBox pickOnBounds="false">
+                            <JFXRippler>
+                                <VBox styleClass="jfx-custom-vbox" onMouseClicked="#dispURLDialog"
+                                      style="-fx-padding: 5 0 0 10">
+                                    <Label>
+                                        <graphic>
+                                            <StackPane styleClass="tool-bar-graphic-container">
+                                                <FontAwesomeIconView glyphName="PLUS" size="64px"/>
+                                            </StackPane>
+                                        </graphic>
+                                    </Label>
+                                    <Label style="-fx-padding: 0 0 0 23">
+                                        Add
+                                    </Label>
+                                </VBox>
+                            </JFXRippler>
+                            <JFXRippler>
+                                <VBox styleClass="jfx-custom-vbox" onMouseClicked="#pauseDownload"
+                                      style="-fx-padding: 5 0 0 10">
+                                    <Label>
+                                        <graphic>
+                                            <StackPane styleClass="tool-bar-graphic-container">
+                                                <FontAwesomeIconView glyphName="PAUSE" size="64px"/>
+                                            </StackPane>
+                                        </graphic>
+                                    </Label>
+                                    <Label style="-fx-padding: 0 0 0 19">
+                                        Pause
+                                    </Label>
+                                </VBox>
+                            </JFXRippler>
+                        </HBox>
+                    </leftItems>
+                </JFXToolbar>
+            </top>
+            <center>
+                <StackPane fx:id="centerPane">
+                    <JFXTreeTableView fx:id="treeTableView">
+                        <columns>
+                            <JFXTreeTableColumn minWidth="200" fx:id="nameColumn" text="File"/>
+                            <JFXTreeTableColumn minWidth="100" fx:id="transferColumn" text="Transfer Rate" />
+                            <JFXTreeTableColumn minWidth="100" fx:id="aveSpeedColumn" text="Ave Rate" />
+                            <JFXTreeTableColumn minWidth="100" fx:id="fileSizeColumn" text="File Size" />
+                            <JFXTreeTableColumn minWidth="100" fx:id="dateColumn" text="Last Updated" />
+                            <JFXTreeTableColumn minWidth="100" fx:id="etaColumn" text="ETA"/>
+                            <JFXTreeTableColumn minWidth="100" fx:id="statusColumn" text="Status"/>
+                            <JFXTreeTableColumn minWidth="200" fx:id="locationColumn" text="File Location"/>
+                        </columns>
+                    </JFXTreeTableView>
+                </StackPane>
+            </center>
+        </BorderPane>
+    </children>
+    <JFXDialog fx:id="urlDialog">
+        <JFXDialogLayout>
+            <heading>
+                <Label>Enter URL</Label>
+            </heading>
+            <body>
+                <VBox styleClass="bottomPadding">
+                    <JFXTextField promptText="Enter URL" fx:id="URLEntryField"/>
+                    <HBox style="-fx-padding: 10px 0px 0px 0px">
+                        <Label style="-fx-font-weight: BOLD">
+                            File:
+                        </Label>
+                        <Label fx:id="fileNameLabel"/>
+                    </HBox>
+
+                    <HBox>
+                        <Label style="-fx-font-weight: BOLD">
+                            File size:
+                        </Label>
+                        <Label fx:id="fileSizeLabel"/>
+                    </HBox>
+
+                    <HBox>
+                        <Label style="-fx-font-weight: BOLD">
+                            Number of connections:
+                        </Label>
+                        <JFXSlider fx:id="noOfConnectionsSlider" min="1" max="10" minorTickCount="1" majorTickUnit="1"
+                                   value="5"/>
+                    </HBox>
+
+                    <Label style="-fx-font-weight: BOLD">
+                        Technical Details:
+                    </Label>
+                    <JFXTextArea fx:id="urlProperties" styleClass="borderColoring"/>
+                </VBox>
+            </body>
+            <actions>
+                <JFXButton styleClass="dialog-reject" onMouseClicked="#closeURLDialog">CANCEL</JFXButton>
+                <JFXButton styleClass="dialog-green" onMouseClicked="#loadURL">START</JFXButton>
+            </actions>
+        </JFXDialogLayout>
+    </JFXDialog>
+
+    <JFXSnackbar fx:id="snackBar" prefWidth="300"/>
+
+    <StackPane fx:id="aContainer" visible="false" styleClass="jfx-popup-overlay-pane" />
+
+</AnchorPane>
