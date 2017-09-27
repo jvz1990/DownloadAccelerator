@@ -81,7 +81,7 @@
     <JFXDialog fx:id="urlDialog">
         <JFXDialogLayout>
             <heading>
-                <Label>Enter URL</Label>
+                <Label>New Download</Label>
             </heading>
             <body>
                 <VBox styleClass="bottomPadding">

@@ -1,4 +1,3 @@
-
 import com.jfoenix.controls.datamodels.treetable.RecursiveTreeObject;
 import com.sun.istack.internal.Nullable;
 import javafx.beans.property.SimpleStringProperty;
@@ -41,7 +40,7 @@ class Download extends RecursiveTreeObject<Download> {
     private static final DecimalFormat numberFormat = new DecimalFormat("#.00");
 
     private static final int BUFFER_SIZE = 1024 * 1024; //1MB
-    private static final int START_TO_WRITE = BUFFER_SIZE * 7; // Start to write at 7MB
+    private static final int START_TO_WRITE = BUFFER_SIZE * 8; // Start to write at 7MB
     private static final int MAX_BUFFER_SIZE = BUFFER_SIZE * 10; // 10MB
     private static final double KILO = 1024.0;
     private static final double MEGA = KILO * 1024.0;
@@ -52,7 +51,6 @@ class Download extends RecursiveTreeObject<Download> {
     private static final double DAY = HOUR * 24;
 
     private boolean removed = false;
-
 
     private int downloadSplits = 4;
 
@@ -115,7 +113,7 @@ class Download extends RecursiveTreeObject<Download> {
         }
     };
 
-    public Download(URL url, long fileSize, @Nullable long[][] chuncksLeft, long totalDataWroteToFile, String destination, String date, String filenameS) {
+    public Download(URL url, long fileSize, @Nullable ArrayDeque<String> chuncksLeft, long totalDataWroteToFile, String destination, String date, String filenameS) {
         this.url = url;
         this.fileSize = fileSize;
         this.totalWroteToFile = totalDataWroteToFile;
@@ -139,7 +137,7 @@ class Download extends RecursiveTreeObject<Download> {
         }
 
         // TODO check url exists
-        if (chuncksLeft != null && chuncksLeft.length > 0 && totalDataWroteToFile != fileSize) {
+        if (chuncksLeft != null && totalDataWroteToFile != fileSize) {
             this.statusS.set("Downloading");
             try {
                 randomAccessFile = new RandomAccessFile(destination, "rws");
@@ -155,19 +153,12 @@ class Download extends RecursiveTreeObject<Download> {
 
             new Thread(() -> {
                 long chunkSize;
-                for (long[] a : chuncksLeft) {
-                    long start = 0, end = 0;
-                    int i = 0;
-                    for (long b : a) {
-                        if (i == 0) start = b;
-                        else end = b;
-                        i++;
-                    }
+                for (String length : chuncksLeft) {
                     try {
                         HttpURLConnection httpURLConnection = (HttpURLConnection) url.openConnection();
-                        String length;
 
-                        length = "bytes=" + start + "-" + end;
+                        long start = Long.parseLong(length.substring(length.indexOf("=") + 1, length.lastIndexOf("-") - 1));
+                        long end = Long.parseLong(length.substring(length.lastIndexOf("-") + 1));
                         chunkSize = end - start;
 
                         httpURLConnection.setRequestProperty("Range", length);
@@ -182,6 +173,7 @@ class Download extends RecursiveTreeObject<Download> {
                         thread.start();
                     } catch (IOException e) {
                         e.printStackTrace();
+                        System.out.println(length);
                     }
                 }
             }).start();
@@ -241,9 +233,7 @@ class Download extends RecursiveTreeObject<Download> {
         wThread.setDaemon(true);
         wThread.start();
 
-        new Thread(() -> {
-            createSections();
-        }).start();
+        new Thread(this::createSections).start();
 
         timer = new Timer();
         timer.schedule(timerTask, 0, 1000);
@@ -312,12 +302,13 @@ class Download extends RecursiveTreeObject<Download> {
 
     private class SectionDownload implements Runnable {
 
-        private long currentPosition, size;
+        private long currentPosition, size, endPoint;
         private InputStream inputStream;
         private boolean done = false;
 
         public SectionDownload(long startingPoint, long size, InputStream inputStream) {
             this.currentPosition = startingPoint;
+            this.endPoint = startingPoint + size;
             this.size = size;
             this.inputStream = inputStream;
         }
@@ -334,14 +325,12 @@ class Download extends RecursiveTreeObject<Download> {
                         longBuffer[writePos++] = shortBuffer[i];
                         totalDataWrote++;
                     }
-                    if (writePos > START_TO_WRITE || !keepRunning) { //Start to panic at 9MB, try to write at 7MB
-                        if (chunksToBeWritten.hasWaitingConsumer() || !keepRunning || (writePos + BUFFER_SIZE > MAX_BUFFER_SIZE)) {
-                            Chunk chunk = new Chunk(currentPosition);
-                            currentPosition += writePos;
-                            chunk.setData(Arrays.copyOfRange(longBuffer, 0, writePos));
-                            writePos = 0;
-                            chunksToBeWritten.transfer(chunk);
-                        }
+                    if (writePos > START_TO_WRITE || !keepRunning) {
+                        Chunk chunk = new Chunk(currentPosition);
+                        currentPosition += writePos;
+                        chunk.setData(Arrays.copyOfRange(longBuffer, 0, writePos));
+                        writePos = 0;
+                        chunksToBeWritten.transfer(chunk);
                     }
                 }
                 Chunk chunk = new Chunk(currentPosition);
@@ -376,27 +365,30 @@ class Download extends RecursiveTreeObject<Download> {
         long getSize() {
             return size;
         }
+
+        public long getEndPoint() {
+            return endPoint;
+        }
     }
 
     void setKeepRunning(boolean keepRunning) {
         this.keepRunning = keepRunning;
         if (!keepRunning && !added && !removed) {
-            final int[] chuncksLeft = {0};
-            sectionDownloads.forEach(sectionDownload -> {
-                if (!sectionDownload.isDone()) chuncksLeft[0]++;
-            });
-            long[][] downloadSections = null;
-            if (chuncksLeft[0] != 0) {
-                downloadSections = new long[chuncksLeft[0]][2];
-                for (int i = 0; !sectionDownloads.isEmpty(); i++) {
+            int no = 0;
+            for (SectionDownload sectionDownload : sectionDownloads) {
+                if (!sectionDownload.isDone()) no++;
+            }
+            ArrayDeque<String> chunksLeft = null;
+            if (no > 0) {
+                chunksLeft = new ArrayDeque<>(no);
+                while (!sectionDownloads.isEmpty()) {
                     SectionDownload sectionDownload = sectionDownloads.getFirst();
-                    downloadSections[i][0] = sectionDownload.getCurrentPosition();
-                    downloadSections[i][1] = sectionDownload.getSize();
+                    chunksLeft.add("bytes=" + sectionDownload.getCurrentPosition() + "-" + (sectionDownload.getEndPoint()));
                     sectionDownloads.remove(sectionDownload);
                 }
             }
             Model.DownloadSave save = new Model.DownloadSave(
-                    url, fileSize, downloadSections, totalWroteToFile, fileLocation.get(), dateAccessed.get(),
+                    url, fileSize, chunksLeft, totalWroteToFile, fileLocation.get(), dateAccessed.get(),
                     filename.get()
             );
             Model.addToDownloads(save);
@@ -434,23 +426,6 @@ class Download extends RecursiveTreeObject<Download> {
         avg += new_sample / N;
 
         return avg;
-    }
-
-    private static boolean doesURLExist(URL url) throws IOException {
-        // We want to check the current URL
-        HttpURLConnection.setFollowRedirects(false);
-
-        HttpURLConnection httpURLConnection = (HttpURLConnection) url.openConnection();
-
-        // We don't need to get data
-        httpURLConnection.setRequestMethod("HEAD");
-
-        // Some websites don't like programmatic access so pretend to be a browser
-        httpURLConnection.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows; U; Windows NT 6.0; en-US; rv:1.9.1.2) Gecko/20090729 Firefox/3.5.2 (.NET CLR 3.5.30729)");
-        int responseCode = httpURLConnection.getResponseCode();
-
-        // We only accept response code 200
-        return responseCode == HttpURLConnection.HTTP_OK;
     }
 
     StringProperty fileSizeColumnProperty() {

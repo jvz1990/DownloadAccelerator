@@ -15,7 +15,6 @@ import javafx.scene.control.TreeTableColumn;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.AnchorPane;
 import javafx.scene.layout.StackPane;
-import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 
 import java.awt.*;
@@ -64,7 +63,7 @@ public class Controller implements Initializable {
     public void initialize(URL location, ResourceBundle resources) {
         sRoot = root;
         try {
-            popupList = FXMLLoader.load(getClass().getResource("/Popup.fxml"));
+            popupList = FXMLLoader.load(getClass().getResource("/fxml/Popup.fxml"));
             popup = new JFXPopup(popupList);
 
             popupList.setOnMouseClicked(MouseEvent -> {
@@ -193,6 +192,7 @@ public class Controller implements Initializable {
         new Thread(() -> {
             String stringBuilderVals = "";
             try {
+                if(!Utilities.doesURLExist(new URL(data))) return;
                 URL url = new URL(data);
                 snackBar.fireEvent(new JFXSnackbar.SnackbarEvent(
                         "Loading URL properties",

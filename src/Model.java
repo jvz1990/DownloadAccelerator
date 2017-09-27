@@ -2,24 +2,24 @@ import com.sun.istack.internal.Nullable;
 
 import java.io.Serializable;
 import java.net.URL;
-import java.util.ArrayList;
+import java.util.ArrayDeque;
 
 public final class Model {
     public static final String EM1 = "1em";
     public static final String ERROR = "error";
-    private static final ArrayList<DownloadSave> downloadSaves = new ArrayList<>();
+    private static final ArrayDeque<DownloadSave> downloadSaves = new ArrayDeque<>();
 
     public static class DownloadSave implements Serializable {
         private static final long serialVersionUID = -36788054537589577L;
         private URL url;
         private long fileSize;
-        private long[][] chunksToDownload;
+        private ArrayDeque<String> chunksToDownload;
         private long totalWritten;
         private String destination;
         private String date;
         private String fileName;
 
-        public DownloadSave(URL url, long fileSize, @Nullable long[][] chunksToDownload,
+        public DownloadSave(URL url, long fileSize, @Nullable ArrayDeque<String> chunksToDownload,
                             long totalWritten, String destination, String date, String fileName) {
             this.url = url;
             this.fileSize = fileSize;
@@ -38,7 +38,7 @@ public final class Model {
             return fileSize;
         }
 
-        public long[][] getChunksToDownload() {
+        public ArrayDeque<String> getChunksToDownload() {
             return chunksToDownload;
         }
 
@@ -63,7 +63,7 @@ public final class Model {
         downloadSaves.add(downloadSave);
     }
 
-    public static ArrayList<DownloadSave> getDownloadSaves() {
+    public static ArrayDeque<DownloadSave> getDownloadSaves() {
         return downloadSaves;
     }
 }

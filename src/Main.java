@@ -8,7 +8,7 @@ import javafx.scene.layout.AnchorPane;
 import javafx.stage.Stage;
 
 import java.io.*;
-import java.util.ArrayList;
+import java.util.ArrayDeque;
 
 public class Main extends Application {
 
@@ -26,7 +26,7 @@ public class Main extends Application {
                 try {
                     ObjectInputStream objectInputStream = new ObjectInputStream(new FileInputStream("settings.bin"));
                     Object object = objectInputStream.readObject();
-                    ArrayList<Model.DownloadSave> downloadSaves = (ArrayList<Model.DownloadSave>) object;
+                    ArrayDeque<Model.DownloadSave> downloadSaves = (ArrayDeque<Model.DownloadSave>) object;
                     downloadSaves.forEach(downloadSave -> Controller.getDownloads().add(new Download(
                             downloadSave.getUrl(),
                             downloadSave.getFileSize(),
@@ -50,7 +50,7 @@ public class Main extends Application {
     public void start(Stage primaryStage) throws IOException {
         stage = primaryStage;
         FXMLLoader fxmlLoader = new FXMLLoader();
-        fxmlLoader.setLocation(Main.class.getResource("/Main.fxml"));
+        fxmlLoader.setLocation(Main.class.getResource("/fxml/Main.fxml"));
         AnchorPane root = fxmlLoader.load();
 
         JFXDecorator jfxDecorator = new JFXDecorator(primaryStage, root);
