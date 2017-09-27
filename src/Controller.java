@@ -85,9 +85,10 @@ public class Controller implements Initializable {
                         deleteFile();
                         break;
                     case "pauseContinue":
+                        pauseResumeDownload();
                         break;
                 }
-
+                aContainer.setVisible(false);
             });
         } catch (IOException e) {
             e.printStackTrace();
@@ -113,10 +114,17 @@ public class Controller implements Initializable {
         setupTreeTable();
     }
 
+    private void pauseResumeDownload() {
+        if(selectedDownload.isDone()) return;
+        if(selectedDownload.isRunning()) {
+            selectedDownload.setKeepRunning(false);
+        } // TODO resume
+    }
+
 
     private void setupTreeTable() {
         setupCellValueFactory(nameColumn, Download::getFilename);
-        setupCellValueFactory(transferColumn, Download::tranferRateProperty);
+        setupCellValueFactory(transferColumn, Download::transferRateProperty);
         setupCellValueFactory(aveSpeedColumn, Download::averageTransferSpeedProperty);
         setupCellValueFactory(fileSizeColumn, Download::fileSizeColumnProperty);
         setupCellValueFactory(dateColumn, Download::dateAccessedProperty);
@@ -133,15 +141,21 @@ public class Controller implements Initializable {
                             aContainer.setLayoutY(event.getSceneY() - 33);
                             aContainer.setVisible(true);
                             selectedDownload = treeTableView.getSelectionModel().getSelectedItem().getValue();
-                            popupList.getChildrenUnmodifiable().forEach(Node -> {
-                                if (Node.getId().equals("pauseContinue")) {
-                                    if (selectedDownload.isKeepRunning()) {
-                                        ((Label) Node).setText("Pause");
+                            popupList.getItems().forEach(e -> {
+                                Label label = ((Label) e);
+                                if (label.getId().equals("pauseContinue")) {
+                                    if (selectedDownload.isRunning()) {
+                                        label.setText("Pause");
+                                        label.setDisable(false);
+                                    } else if(!selectedDownload.isDone()){
+                                        label.setText("Resume");
+                                        label.setDisable(false);
                                     } else {
-                                        ((Label) Node).setText("Resume");
+                                        label.setDisable(true);
                                     }
                                 }
                             });
+
 
                             popup.show(aContainer);
                         }
@@ -192,8 +206,8 @@ public class Controller implements Initializable {
         new Thread(() -> {
             String stringBuilderVals = "";
             try {
-                if(!Utilities.doesURLExist(new URL(data))) return;
                 URL url = new URL(data);
+                if(!Utilities.doesURLExist(url)) return;
                 snackBar.fireEvent(new JFXSnackbar.SnackbarEvent(
                         "Loading URL properties",
                         "CLOSE",

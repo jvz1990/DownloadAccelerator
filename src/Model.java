@@ -18,9 +18,10 @@ public final class Model {
         private String destination;
         private String date;
         private String fileName;
+        private boolean completed;
 
         public DownloadSave(URL url, long fileSize, @Nullable ArrayDeque<String> chunksToDownload,
-                            long totalWritten, String destination, String date, String fileName) {
+                            long totalWritten, String destination, String date, String fileName, boolean completed) {
             this.url = url;
             this.fileSize = fileSize;
             this.chunksToDownload = chunksToDownload;
@@ -28,6 +29,7 @@ public final class Model {
             this.destination = destination;
             this.date = date;
             this.fileName = fileName;
+            this.completed = completed;
         }
 
         public URL getUrl() {
@@ -56,6 +58,10 @@ public final class Model {
 
         public String getFileName() {
             return fileName;
+        }
+
+        public boolean isCompleted() {
+            return completed;
         }
     }
 

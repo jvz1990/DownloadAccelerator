@@ -15,14 +15,14 @@ public class Main extends Application {
     public static Stage stage;
 
     public static void main(String[] args) {
-        new Thread(() ->{
+        new Thread(() -> {
             try {
                 Thread.sleep(100);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
             File file = new File("settings.bin");
-            if(file.exists()) {
+            if (file.exists()) {
                 try {
                     ObjectInputStream objectInputStream = new ObjectInputStream(new FileInputStream("settings.bin"));
                     Object object = objectInputStream.readObject();
@@ -34,7 +34,8 @@ public class Main extends Application {
                             downloadSave.getTotalWritten(),
                             downloadSave.getDestination(),
                             downloadSave.getDate(),
-                            downloadSave.getFileName()
+                            downloadSave.getFileName(),
+                            downloadSave.isCompleted()
                     )));
                     objectInputStream.close();
                 } catch (IOException | ClassNotFoundException e) {
@@ -67,23 +68,28 @@ public class Main extends Application {
 
         primaryStage.setScene(scene);
         primaryStage.show();
-        stage.setOnHiding(e -> {
-            Controller.stopAllDownloads();
-            new Thread(() -> {
-                try {
-                    Thread.sleep(1000);
-                    ObjectOutputStream objectOutputStream = new ObjectOutputStream(new FileOutputStream("settings.bin"));
-                    objectOutputStream.writeObject(Model.getDownloadSaves());
-                    objectOutputStream.flush();
-                    objectOutputStream.close();
+        stage.setOnHiding(e -> new Thread(() -> {
+            try {
+                Controller.stopAllDownloads();
+                Thread.sleep(100);
+                boolean threadDone;
+                do {
+                    threadDone = true;
+                    for (Download d : Controller.getDownloads()) {
+                        if (d.isRunning()) threadDone = false;
+                    }
+                    if (!threadDone) Thread.sleep(100);
+                } while (!threadDone);
+                ObjectOutputStream objectOutputStream = new ObjectOutputStream(new FileOutputStream("settings.bin"));
+                objectOutputStream.writeObject(Model.getDownloadSaves());
+                objectOutputStream.flush();
+                objectOutputStream.close();
 
-
-                    System.exit(0);
-                } catch (InterruptedException | IOException e1) {
-                    e1.printStackTrace();
-                }
-            }).start();
-        });
+                System.exit(0);
+            } catch (InterruptedException | IOException e1) {
+                e1.printStackTrace();
+            }
+        }).start());
         Platform.setImplicitExit(false);
     }
 

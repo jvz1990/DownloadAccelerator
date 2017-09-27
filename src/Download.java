@@ -12,11 +12,12 @@ import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.LinkedTransferQueue;
+import java.util.concurrent.TimeUnit;
 
 class Download extends RecursiveTreeObject<Download> {
     private StringProperty filename;
     private StringProperty dateAccessed;
-    private StringProperty tranferRate;
+    private StringProperty transferRate;
     private StringProperty statusS;
     private StringProperty fileLocation;
     private StringProperty averageTransferSpeed;
@@ -28,12 +29,14 @@ class Download extends RecursiveTreeObject<Download> {
     private URL url;
     private final LinkedTransferQueue<Chunk> chunksToBeWritten = new LinkedTransferQueue<>();
     private final ArrayDeque<SectionDownload> sectionDownloads = new ArrayDeque<>();
+    private final ArrayDeque<Thread> producers = new ArrayDeque<>();
+    private Thread consumer;
     private RandomAccessFile randomAccessFile;
     private long totalDataWrote;
     private long totalDataWrotePrev;
     private long totalWroteToFile;
     private Timer timer;
-    private boolean keepRunning = true, added = false;
+    private boolean keepRunning = true, added = false, done = false, running = false;
     private double N = 0;
     private double aveSpeed = 0;
 
@@ -57,17 +60,18 @@ class Download extends RecursiveTreeObject<Download> {
     private Runnable writer = new Runnable() {
         @Override
         public void run() {
-            while (keepRunning) {
-                try {
-                    Chunk chunk = chunksToBeWritten.take();
-                    randomAccessFile.seek(chunk.getStartPosition());
-                    randomAccessFile.write(chunk.getData());
-                    totalWroteToFile += chunk.getData().length;
-                    chunk.deReference();
-                    chunk = null;
-                } catch (InterruptedException | IOException e) {
-                    e.printStackTrace();
+            Chunk chunk;
+            try {
+                while ((chunk = chunksToBeWritten.poll(30, TimeUnit.MINUTES)) != null) {
+                        randomAccessFile.seek(chunk.getStartPosition());
+                        randomAccessFile.write(chunk.getData());
+                        totalWroteToFile += chunk.getData().length;
+                        //System.out.println("wrote chunk from: " + chunk.getStartPosition() + " to " + (chunk.getData().length + chunk.getStartPosition()));
+                        chunk.deReference();
+                        chunk = null;
                 }
+            } catch (InterruptedException | IOException e) {
+                e.printStackTrace();
             }
         }
     };
@@ -85,37 +89,51 @@ class Download extends RecursiveTreeObject<Download> {
             double perc = ((totalDataWrote > 0) ? (totalDataWrote * 1.0) / (fileSize * 1.0) : 0.0);
             statusS.setValue(numberFormat.format(perc * 100.0) + "%");
             if (diff != 0) {
-                tranferRate.setValue(speedToString(diff));
+                transferRate.setValue(speedToString(diff));
             } else {
-                tranferRate.setValue("0");
+                transferRate.setValue("0");
             }
             if ((totalWroteToFile >= fileSize) || !keepRunning) {
-                timer.cancel();
-                timer.purge();
-                setKeepRunning(false);
-                tranferRate.set("");
-                statusS.set("Completed");
-                averageTransferSpeed.set("");
-                etaColumn.set("");
                 new Thread(() -> {
+                    //setKeepRunning(false);
+                    if(totalWroteToFile >= fileSize) done = true;
+                    boolean threadsStillRunning;
+                    do {
+                        threadsStillRunning = false;
+                        for(Thread t : producers) {
+                            if(t.isAlive()) threadsStillRunning = true;
+                        }
+                        try {
+                            Thread.sleep(100);
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                    } while (threadsStillRunning);
+                    transferRate.set("");
+                    if(done) statusS.set("Completed");
+                    else statusS.set("Paused");
+                    averageTransferSpeed.set("");
+                    etaColumn.set("");
                     try {
-                        Thread.sleep(1000);
                         randomAccessFile.close();
-                        chunksToBeWritten.clear();
-                        System.gc();
-                    } catch (IOException | InterruptedException e) {
+                    } catch (IOException e) {
                         e.printStackTrace();
                     }
+                    chunksToBeWritten.clear();
+                    running = false;
+                    System.gc();
                 }).start();
-
-                System.gc();
+                timer.cancel();
+                timer.purge();
             }
         }
     };
 
-    public Download(URL url, long fileSize, @Nullable ArrayDeque<String> chuncksLeft, long totalDataWroteToFile, String destination, String date, String filenameS) {
+    public Download(URL url, long fileSize, @Nullable ArrayDeque<String> chuncksLeft,
+                    long totalDataWroteToFile, String destination, String date, String filenameS, boolean done) {
         this.url = url;
         this.fileSize = fileSize;
+        //System.out.println("File Size: " + fileSize);
         this.totalWroteToFile = totalDataWroteToFile;
         this.totalDataWrote = totalDataWroteToFile;
         this.dateAccessed = new SimpleStringProperty(date);
@@ -123,8 +141,9 @@ class Download extends RecursiveTreeObject<Download> {
         this.filename = new SimpleStringProperty(filenameS);
         this.averageTransferSpeed = new SimpleStringProperty("");
         this.statusS = new SimpleStringProperty("Completed!");
-        this.tranferRate = new SimpleStringProperty("");
+        this.transferRate = new SimpleStringProperty("");
         this.etaColumn = new SimpleStringProperty("");
+        this.done = done;
 
         if (fileSize > (GIGA)) {
             this.fileSizeColumn = new SimpleStringProperty(numberFormat.format(fileSize / (GIGA)) + "GB");
@@ -137,7 +156,7 @@ class Download extends RecursiveTreeObject<Download> {
         }
 
         // TODO check url exists
-        if (chuncksLeft != null && totalDataWroteToFile != fileSize) {
+        if (chuncksLeft != null && totalDataWroteToFile != fileSize && !done) {
             this.statusS.set("Downloading");
             try {
                 randomAccessFile = new RandomAccessFile(destination, "rws");
@@ -146,10 +165,10 @@ class Download extends RecursiveTreeObject<Download> {
                 e.printStackTrace();
             }
 
-            Thread wThread = new Thread(writer);
-            wThread.setPriority(Thread.MAX_PRIORITY);
-            wThread.setDaemon(true);
-            wThread.start();
+            consumer = new Thread(writer);
+            consumer.setPriority(Thread.MAX_PRIORITY);
+            consumer.setDaemon(true);
+            consumer.start();
 
             new Thread(() -> {
                 long chunkSize;
@@ -157,28 +176,31 @@ class Download extends RecursiveTreeObject<Download> {
                     try {
                         HttpURLConnection httpURLConnection = (HttpURLConnection) url.openConnection();
 
-                        long start = Long.parseLong(length.substring(length.indexOf("=") + 1, length.lastIndexOf("-") - 1));
+                        long start = Long.parseLong(length.substring(length.indexOf("=") + 1, length.lastIndexOf("-")));
                         long end = Long.parseLong(length.substring(length.lastIndexOf("-") + 1));
                         chunkSize = end - start;
 
+                        //System.out.println("Range: " + length + " vs " + start + " , " + end);
                         httpURLConnection.setRequestProperty("Range", length);
                         httpURLConnection.connect();
                         InputStream inputStream = httpURLConnection.getInputStream();
 
                         SectionDownload sectionDownload = new SectionDownload(start, chunkSize, inputStream);
                         sectionDownloads.add(sectionDownload);
-                        Thread thread = new Thread(sectionDownload);
+                        Thread thread = new Thread(sectionDownload, String.valueOf(start));
                         thread.setDaemon(true);
                         thread.setPriority(Thread.MAX_PRIORITY);
                         thread.start();
+                        producers.add(thread);
                     } catch (IOException e) {
-                        e.printStackTrace();
-                        System.out.println(length);
+                        //e.printStackTrace();
+                        //System.out.println(length);
                     }
                 }
             }).start();
             timer = new Timer();
             timer.schedule(timerTask, 0, 1000);
+            running = true;
         } else {
             this.statusS = new SimpleStringProperty("Completed");
         }
@@ -192,7 +214,7 @@ class Download extends RecursiveTreeObject<Download> {
         this.downloadSplits = downloadSplits;
         this.dateAccessed = new SimpleStringProperty(dateFormat.format(new Date()));
         this.fileLocation = new SimpleStringProperty(destination.toString());
-        this.tranferRate = new SimpleStringProperty("0 kB/s");
+        this.transferRate = new SimpleStringProperty("0 kB/s");
         this.averageTransferSpeed = new SimpleStringProperty("0 kB/s");
         this.statusS = new SimpleStringProperty("Downloading");
         this.etaColumn = new SimpleStringProperty("");
@@ -210,6 +232,7 @@ class Download extends RecursiveTreeObject<Download> {
         }
 
         this.fileSize = Long.parseLong(valuesMap.get("Content-Length"));
+        //System.out.println("Length: " + this.fileSize);
 
         if (fileSize > (GIGA)) {
             this.fileSizeColumn = new SimpleStringProperty(numberFormat.format(fileSize / (GIGA)) + "GB");
@@ -223,20 +246,21 @@ class Download extends RecursiveTreeObject<Download> {
 
         try {
             randomAccessFile = new RandomAccessFile(destination, "rw");
-            randomAccessFile.setLength(fileSize);
+            if (!destination.exists()) randomAccessFile.setLength(fileSize);
         } catch (IOException e) {
             e.printStackTrace();
         }
 
-        Thread wThread = new Thread(writer);
-        wThread.setPriority(Thread.MAX_PRIORITY);
-        wThread.setDaemon(true);
-        wThread.start();
+        consumer = new Thread(writer);
+        consumer.setPriority(Thread.MAX_PRIORITY);
+        consumer.setDaemon(true);
+        consumer.start();
 
         new Thread(this::createSections).start();
 
         timer = new Timer();
         timer.schedule(timerTask, 0, 1000);
+        running = true;
     }
 
 
@@ -265,10 +289,11 @@ class Download extends RecursiveTreeObject<Download> {
                 thread.setDaemon(true);
                 thread.setPriority(Thread.MAX_PRIORITY);
                 thread.start();
+                producers.add(thread);
                 chunkPos += chunkSize + 1;
             } catch (IOException e) {
-                e.printStackTrace();
-                System.out.println(length + " vs " + fileSize);
+                //e.printStackTrace();
+                //System.out.println(length + " vs " + fileSize);
                 return;
             }
         }
@@ -325,7 +350,7 @@ class Download extends RecursiveTreeObject<Download> {
                         longBuffer[writePos++] = shortBuffer[i];
                         totalDataWrote++;
                     }
-                    if (writePos > START_TO_WRITE || !keepRunning) {
+                    if (writePos > START_TO_WRITE) {
                         Chunk chunk = new Chunk(currentPosition);
                         currentPosition += writePos;
                         chunk.setData(Arrays.copyOfRange(longBuffer, 0, writePos));
@@ -333,16 +358,15 @@ class Download extends RecursiveTreeObject<Download> {
                         chunksToBeWritten.transfer(chunk);
                     }
                 }
+                //System.out.println("closing chunk");
                 Chunk chunk = new Chunk(currentPosition);
                 chunk.setData(Arrays.copyOfRange(longBuffer, 0, writePos));
                 chunksToBeWritten.transfer(chunk);
                 inputStream.close();
                 if (length == -1) {
                     done = true;
-                    statusS.setValue("Completing");
                 } else {
                     done = false;
-                    statusS.setValue("Paused");
                 }
 
             } catch (IOException | InterruptedException e) {
@@ -352,6 +376,7 @@ class Download extends RecursiveTreeObject<Download> {
                 shortBuffer = null;
                 longBuffer = null;
             }
+            //System.out.println("Thread done");
         }
 
         boolean isDone() {
@@ -362,10 +387,6 @@ class Download extends RecursiveTreeObject<Download> {
             return currentPosition;
         }
 
-        long getSize() {
-            return size;
-        }
-
         public long getEndPoint() {
             return endPoint;
         }
@@ -373,23 +394,42 @@ class Download extends RecursiveTreeObject<Download> {
 
     void setKeepRunning(boolean keepRunning) {
         this.keepRunning = keepRunning;
+        //System.out.println("Running :" + this.keepRunning);
+        //System.out.println("zero");
         if (!keepRunning && !added && !removed) {
             int no = 0;
             for (SectionDownload sectionDownload : sectionDownloads) {
                 if (!sectionDownload.isDone()) no++;
+                //System.out.println("loop 0");
             }
             ArrayDeque<String> chunksLeft = null;
             if (no > 0) {
+
+                boolean threadsDone = true;
+                do {
+                    for (Thread t : producers) {
+                        if (t.isAlive()) {
+                            threadsDone = false;
+                            //System.out.println(t.getName());
+                        }
+                    }
+                    if (!threadsDone) {
+                        try {
+                            Thread.sleep(100);
+                        } catch (InterruptedException e) {
+                            //e.printStackTrace();
+                        }
+                    }
+                } while (!threadsDone);
+
                 chunksLeft = new ArrayDeque<>(no);
-                while (!sectionDownloads.isEmpty()) {
-                    SectionDownload sectionDownload = sectionDownloads.getFirst();
+                for(SectionDownload sectionDownload : sectionDownloads) {
                     chunksLeft.add("bytes=" + sectionDownload.getCurrentPosition() + "-" + (sectionDownload.getEndPoint()));
-                    sectionDownloads.remove(sectionDownload);
                 }
             }
             Model.DownloadSave save = new Model.DownloadSave(
                     url, fileSize, chunksLeft, totalWroteToFile, fileLocation.get(), dateAccessed.get(),
-                    filename.get()
+                    filename.get(), done
             );
             Model.addToDownloads(save);
             added = true;
@@ -404,8 +444,8 @@ class Download extends RecursiveTreeObject<Download> {
         return dateAccessed;
     }
 
-    StringProperty tranferRateProperty() {
-        return tranferRate;
+    StringProperty transferRateProperty() {
+        return transferRate;
     }
 
     StringProperty statusSProperty() {
@@ -471,5 +511,13 @@ class Download extends RecursiveTreeObject<Download> {
 
     public StringProperty etaColumnProperty() {
         return etaColumn;
+    }
+
+    public boolean isDone() {
+        return done;
+    }
+
+    public boolean isRunning() {
+        return running;
     }
 }
