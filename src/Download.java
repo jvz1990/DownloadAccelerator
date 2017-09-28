@@ -7,6 +7,7 @@ import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLDecoder;
+import java.nio.charset.Charset;
 import java.text.DateFormat;
 import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
@@ -224,11 +225,19 @@ class Download extends RecursiveTreeObject<Download> {
 
         String temp = valuesMap.get("Content-Disposition");
         if (temp != null) {
-            this.filename = new SimpleStringProperty(URLDecoder.decode(temp.substring(temp.lastIndexOf("UTF-8") + 7, temp.length())));
+            try {
+                this.filename = new SimpleStringProperty(URLDecoder.decode(temp.substring(temp.lastIndexOf("UTF-8") + 7, temp.length()), "UTF-8"));
+            } catch (UnsupportedEncodingException e) {
+                e.printStackTrace();
+            }
         } else {
             temp = url.toString();
             temp = temp.substring(temp.lastIndexOf("/") + 1, temp.length());
-            this.filename = new SimpleStringProperty(URLDecoder.decode(temp));
+            try {
+                this.filename = new SimpleStringProperty(URLDecoder.decode(temp, "UTF-8"));
+            } catch (UnsupportedEncodingException e) {
+                e.printStackTrace();
+            }
         }
 
         this.fileSize = Long.parseLong(valuesMap.get("Content-Length"));
@@ -371,7 +380,7 @@ class Download extends RecursiveTreeObject<Download> {
 
             } catch (IOException | InterruptedException e) {
                 e.printStackTrace();
-                setKeepRunning(false);
+                //setKeepRunning(false);
             } finally {
                 shortBuffer = null;
                 longBuffer = null;
@@ -397,42 +406,45 @@ class Download extends RecursiveTreeObject<Download> {
         //System.out.println("Running :" + this.keepRunning);
         //System.out.println("zero");
         if (!keepRunning && !added && !removed) {
-            int no = 0;
-            for (SectionDownload sectionDownload : sectionDownloads) {
-                if (!sectionDownload.isDone()) no++;
-                //System.out.println("loop 0");
-            }
-            ArrayDeque<String> chunksLeft = null;
-            if (no > 0) {
-
-                boolean threadsDone = true;
-                do {
-                    for (Thread t : producers) {
-                        if (t.isAlive()) {
-                            threadsDone = false;
-                            //System.out.println(t.getName());
-                        }
-                    }
-                    if (!threadsDone) {
-                        try {
-                            Thread.sleep(100);
-                        } catch (InterruptedException e) {
-                            //e.printStackTrace();
-                        }
-                    }
-                } while (!threadsDone);
-
-                chunksLeft = new ArrayDeque<>(no);
-                for(SectionDownload sectionDownload : sectionDownloads) {
-                    chunksLeft.add("bytes=" + sectionDownload.getCurrentPosition() + "-" + (sectionDownload.getEndPoint()));
+            new Thread(() -> {
+                int no = 0;
+                for (SectionDownload sectionDownload : sectionDownloads) {
+                    if (!sectionDownload.isDone()) no++;
                 }
-            }
-            Model.DownloadSave save = new Model.DownloadSave(
-                    url, fileSize, chunksLeft, totalWroteToFile, fileLocation.get(), dateAccessed.get(),
-                    filename.get(), done
-            );
-            Model.addToDownloads(save);
-            added = true;
+                ArrayDeque<String> chunksLeft = null;
+                if (no > 0) {
+
+                    boolean threadsDone;
+                    do {
+                        threadsDone = true;
+                        for (Thread t : producers) {
+                            if (t.isAlive()) {
+                                threadsDone = false;
+                                System.out.println(t.getName());
+                            }
+                        }
+                        if (!threadsDone) {
+                            try {
+                                Thread.sleep(100);
+                            } catch (InterruptedException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                    } while (!threadsDone);
+
+                    chunksLeft = new ArrayDeque<>(no);
+                    for(SectionDownload sectionDownload : sectionDownloads) {
+                        chunksLeft.add("bytes=" + sectionDownload.getCurrentPosition() + "-" + (sectionDownload.getEndPoint()));
+                    }
+                }
+                Model.DownloadSave save = new Model.DownloadSave(
+                        url, fileSize, chunksLeft, totalWroteToFile, fileLocation.get(), dateAccessed.get(),
+                        filename.get(), done
+                );
+                Model.addToDownloads(save);
+                added = true;
+            }).start();
+
         }
     }
 
